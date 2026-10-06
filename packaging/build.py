@@ -46,6 +46,13 @@ _DEFAULT_TSA = "http://timestamp.digicert.com"
 
 def run(cmd, **kw) -> subprocess.CompletedProcess:
     print(">", " ".join(str(c) for c in cmd))
+    # Передаём детям PYTHONIOENCODING=utf-8, чтобы `print` с кириллицей в
+    # subprocess (make_empty_db.py, cyclonedx_py) не падал на Windows,
+    # где stdout по умолчанию cp1252.
+    env = dict(os.environ)
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PYTHONUTF8", "1")
+    kw.setdefault("env", env)
     return subprocess.run(cmd, check=True, **kw)
 
 
