@@ -24,6 +24,14 @@ import tempfile
 import zipfile
 from datetime import datetime
 
+# UTF-8 stdout: тихий режим --target печатает сообщение по-русски; на Windows
+# консоль по умолчанию cp1252, и `print` падает UnicodeEncodeError.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 APP_TITLE = "Установка Masking"
 
 # Палитра: сдержанный синий как в веб-интерфейсе Masking (--accent #1f5fd6).

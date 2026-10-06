@@ -24,6 +24,14 @@ import sys
 import venv
 from pathlib import Path
 
+# UTF-8 stdout для Windows-консоли (cp1252 не вывозит кириллицу — иначе падает
+# первый же print в CI с UnicodeEncodeError).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 ROOT = Path(__file__).resolve().parent.parent              # корень репозитория
 PKG = ROOT / "packaging"
 APP_SPEC = ROOT / "masking-service.spec"                   # spec основного приложения
