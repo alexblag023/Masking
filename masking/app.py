@@ -105,6 +105,32 @@ def health() -> dict:
     }
 
 
+# ----- Heartbeat ----------------------------------------------------------
+#
+# Открытый в браузере UI периодически бьёт сюда (см. masking/static/app.js).
+# main.py запускает watchdog, который завершает процесс, если heartbeat
+# пропал надолго: это закрытие окна/вкладки — и приложение должно уйти,
+# иначе в фоне продолжит висеть uvicorn без клиента.
+import time as _time
+_last_heartbeat = {"at": _time.monotonic()}
+
+
+def heartbeat_age() -> float:
+    """Сколько секунд прошло с последнего heartbeat (для watchdog в main.py)."""
+    return _time.monotonic() - _last_heartbeat["at"]
+
+
+def mark_heartbeat_now() -> None:
+    _last_heartbeat["at"] = _time.monotonic()
+
+
+@app.post("/api/heartbeat")
+def api_heartbeat() -> dict:
+    """UI пингует этот эндпоинт раз в несколько секунд — пока вкладка открыта."""
+    mark_heartbeat_now()
+    return {"ok": True}
+
+
 # ----- Проекты --------------------------------------------------------------
 
 @app.get("/api/projects")

@@ -566,3 +566,15 @@ api("/health").then(h => {
   if (h.error) toast(h.error, "err", 10000);
 }).catch(() => $("#status").textContent = "нет связи с сервисом");
 route();
+
+// Heartbeat: пока вкладка открыта, пингуем сервис. Если пинг пропадёт на
+// ~30 секунд (вкладку закрыли или ПК ушёл в сон), процесс сервиса выйдет
+// сам (watchdog в main.py). Это и есть «закрыл окно → приложение закрылось».
+function beat() {
+  // same-origin: заголовки Origin/Sec-Fetch-Site проверяет серверный middleware.
+  fetch("/api/heartbeat", { method: "POST", credentials: "same-origin" }).catch(() => {});
+}
+beat();
+setInterval(beat, 5000);
+// Приоритетно: при закрытии вкладки отправляем прощальный пинг с меткой — но
+// он нам не нужен для корректности, достаточно таймаута.
