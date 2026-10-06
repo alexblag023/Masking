@@ -149,12 +149,22 @@ def _force_icons(py: Path, exe: Path) -> None:
     if not icons or not exe.is_file():
         return
     code = (
-        "import sys\n"
-        "from PyInstaller.utils.win32.icon import CopyIcons\n"
-        "CopyIcons(sys.argv[1], sys.argv[2:])\n"
+        "import sys, traceback\n"
+        "try:\n"
+        "    from PyInstaller.utils.win32.icon import CopyIcons\n"
+        "    CopyIcons(sys.argv[1], sys.argv[2:])\n"
+        "    print('CopyIcons OK, files:', len(sys.argv[2:]))\n"
+        "except Exception:\n"
+        "    traceback.print_exc()\n"
+        "    sys.exit(1)\n"
     )
-    run([py, "-c", code, str(exe), *icons])
-    print(f"Переписал иконки exe: {len(icons)} размеров")
+    # Не падаем в check=True — печатаем stdout/stderr и идём дальше, если
+    # CopyIcons упал. Один RT_ICON из spec лучше, чем сломанная сборка.
+    r = subprocess.run([py, "-c", code, str(exe), *icons], capture_output=True, text=True)
+    if r.stdout: print(r.stdout.rstrip())
+    if r.stderr: print(r.stderr.rstrip(), file=sys.stderr)
+    if r.returncode == 0:
+        print(f"Переписал иконки exe: {len(icons)} размеров")
 
 
 def generate_sbom(py: Path) -> Path | None:
