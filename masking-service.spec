@@ -1,11 +1,17 @@
 # PyInstaller: onedir (папка с exe + _internal), данные пользователя — рядом с exe.
 # Модели NER и статика встроены как data; pymorphy3 требует явного включения
 # метаданных пакета словарей.
+import os
 from PyInstaller.utils.hooks import (
     collect_data_files,
     collect_submodules,
     copy_metadata,
 )
+
+# SPECPATH — папка самого .spec. Все пути строим от неё, чтобы сборка не
+# зависела от текущего каталога (в CI это важно).
+ROOT = SPECPATH
+ICON = os.path.join(ROOT, "packaging", "masking.ico")
 
 hidden = (
     collect_submodules("uvicorn")
@@ -44,7 +50,7 @@ exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True,
     name="masking-service",
     console=False,            # без чёрного окна консоли
-    icon="packaging/masking.ico",
+    icon=ICON,
     upx=False,
 )
 coll = COLLECT(
