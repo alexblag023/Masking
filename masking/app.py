@@ -30,6 +30,11 @@ MEDIA_TYPES = {
 # `testserver` — хост TestClient Starlette, оставляем ради тестов.
 _ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# Пути, которым разрешён POST без CSRF-проверки: это идемпотентные
+# «браузер уходит» сигналы через navigator.sendBeacon (у sendBeacon нет
+# Origin и Sec-Fetch-Site, но Host есть и loopback-check его отбивает,
+# если запрос пришёл не от нас).
+_CSRF_EXEMPT_PATHS = {"/api/closed"}
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -40,7 +45,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if host and host not in _ALLOWED_HOSTS:
             return Response("Host rejected", status_code=400)
 
-        if request.method not in _SAFE_METHODS:
+        if request.method not in _SAFE_METHODS and request.url.path not in _CSRF_EXEMPT_PATHS:
             # Приемлем запросы либо от нашей же страницы (same-origin), либо
             # из тестового клиента (у TestClient Origin/Sec-Fetch-Site отсутствуют).
             sfs = request.headers.get("sec-fetch-site")
@@ -148,6 +153,22 @@ def register_shutdown_callback(fn) -> None:
 def api_shutdown() -> dict:
     """Инициирует корректное завершение сервиса. Доступен только с loopback
     (host-check уже сделан SecurityHeadersMiddleware)."""
+    for fn in _shutdown_callbacks:
+        try:
+            fn()
+        except Exception:
+            pass
+    return {"ok": True}
+
+
+@app.post("/api/closed")
+def api_closed() -> dict:
+    """UI сообщает о закрытии вкладки (navigator.sendBeacon на beforeunload).
+
+    sendBeacon не добавляет Origin и шлёт text/plain, поэтому эндпоинт
+    выведен из-под обычной CSRF-проверки через `_safe_paths` в middleware.
+    По факту это тот же shutdown, что и /api/shutdown.
+    """
     for fn in _shutdown_callbacks:
         try:
             fn()

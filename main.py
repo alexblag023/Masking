@@ -87,8 +87,8 @@ def _run_server(server: uvicorn.Server) -> None:
         _log.exception("uvicorn упал")
 
 
-def _start_watchdog(server: uvicorn.Server, timeout_s: float = 30.0,
-                    grace_s: float = 60.0, poll_s: float = 2.0) -> threading.Thread:
+def _start_watchdog(server: uvicorn.Server, timeout_s: float = 15.0,
+                    grace_s: float = 20.0, poll_s: float = 2.0) -> threading.Thread:
     """Фоновый поток: завершает процесс, если UI долго не слал heartbeat.
 
     Нужен, если pywebview-окно открыть не удалось и приложение показалось в
@@ -97,7 +97,11 @@ def _start_watchdog(server: uvicorn.Server, timeout_s: float = 30.0,
     окно закрывают, браузер в окне перестаёт пинговать, и мы точно выходим.
 
     `grace_s` — время с момента старта, в которое выход по тишине запрещён
-    (пользователю надо успеть открыть UI). `timeout_s` — после этого.
+    (пользователю надо успеть открыть UI, ~20 с). `timeout_s` — после этого
+    (15 с без пинга = выход; UI пингует каждые 5 с).
+
+    Дополнительно: JS в UI делает `navigator.sendBeacon('/api/closed')` на
+    beforeunload — тогда процесс выходит без ожидания.
     """
     from masking.app import heartbeat_age, mark_heartbeat_now
 

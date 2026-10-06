@@ -62,3 +62,17 @@ def test_shutdown_endpoint_calls_callback():
         assert flag["called"] is True
     finally:
         _shutdown_callbacks.clear()
+
+
+def test_closed_endpoint_no_csrf_required():
+    """`/api/closed` — sendBeacon без Origin/Sec-Fetch-Site; проходит без CSRF."""
+    from masking.app import register_shutdown_callback, _shutdown_callbacks
+    flag = {"called": False}
+    register_shutdown_callback(lambda: flag.__setitem__("called", True))
+    try:
+        # Явно без sec-fetch-site и Origin — имитируем sendBeacon.
+        r = client.post("/api/closed", content="")
+        assert r.status_code == 200
+        assert flag["called"] is True
+    finally:
+        _shutdown_callbacks.clear()
