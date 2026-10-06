@@ -54,13 +54,25 @@ Portable-программа для Windows: папка с `masking-service.exe` 
 
 Swagger: `/docs`.
 
-## Сборка
+## Поставка и установка
 
-### Portable для Windows
+Установочный пакет собирается командой:
 
-На Windows: `build.bat`. Результат — `dist\masking-service\` целиком (exe + `_internal\`), ≈ 150 МБ. Копируйте всю папку.
+```
+python packaging/build.py
+```
 
-Либо через GitHub Actions (workflow `build-exe`): собирает на `windows-latest`, запускает exe и дёргает `/api/health`, выкладывает артефакт `masking-service-portable-windows` — zip с portable-папкой.
+Скрипт в чистом venv ставит зависимости (с проверкой хэшей, если есть `requirements.lock`), прогоняет тесты, собирает приложение в `dist/masking-service/`, упаковывает в `dist/Masking_<версия>.zip` и собирает GUI-установщик `dist/Установить_Masking.exe` с вшитым zip внутри. Рядом кладёт `sbom.cdx.json` (CycloneDX) и `SHA256.txt`.
+
+Полный путь поставки — `packaging/УСТАНОВКА.md`. У установщика есть:
+- выбор папки установки (по умолчанию — рабочий стол, с учётом переноса в OneDrive);
+- живая подсказка «что произойдёт»: установка / переустановка / обновление / откат;
+- сохранение `data/` при обновлении;
+- переустановка с бэкапом при несовместимой схеме;
+- тихий режим: `Установить_Masking.exe --target "C:\Programs"`;
+- опциональная подпись Authenticode через `MASKING_SIGN_THUMBPRINT` или `MASKING_SIGN_PFX`.
+
+CI (workflow `build-installer`): собирает на Windows, прогоняет тесты, устанавливает в тихом режиме, запускает `masking-service.exe` и проверяет `/api/health`. Артефакты: `masking-portable` (zip), `masking-installer` (exe), `masking-sbom`.
 
 ### Разработка
 
