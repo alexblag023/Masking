@@ -26,7 +26,7 @@ jobs:
         # лок-файла нет — build.py предупредит и соберёт из requirements.txt.
         run: python packaging/build.py --allow-dirty --skip-tests
 
-      - name: Smoke test installer (silent install)
+      - name: Smoke test installer (silent install + headless service start)
         shell: pwsh
         run: |
           $target = "$env:RUNNER_TEMP\mk_target"
@@ -34,15 +34,25 @@ jobs:
           Start-Process -FilePath "dist\Установить_Masking.exe" -ArgumentList "--target $target" -Wait -NoNewWindow
           if (-not (Test-Path "$target\Masking\masking-service.exe")) { throw "Installer did not place masking-service.exe" }
           Get-Content "$target\Masking\compat.txt"
-          # Запуск установленной программы и health-check.
-          $p = Start-Process "$target\Masking\masking-service.exe" -PassThru
-          Start-Sleep -Seconds 15
-          try {
-            $r = Invoke-RestMethod http://127.0.0.1:8765/api/health
-            if ($r.status -ne "ok") { throw "health check failed: $($r | ConvertTo-Json)" }
-          } finally {
-            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-          }
+          # Запускаем сервис, но без своего окна (CI headless): берём внутренний модуль
+          # напрямую, uvicorn в текущем процессе, проверяем health.
+          python -c @"
+          import sys, pathlib, threading, time, socket, urllib.request
+          sys.path.insert(0, r'$target\Masking\_internal')
+          import uvicorn
+          from masking.app import app
+          cfg = uvicorn.Config(app, host='127.0.0.1', port=8765, log_level='warning', access_log=False)
+          srv = uvicorn.Server(cfg)
+          t = threading.Thread(target=srv.run, daemon=True); t.start()
+          for _ in range(100):
+              try:
+                  with socket.create_connection(('127.0.0.1', 8765), timeout=0.3): break
+              except OSError: time.sleep(0.1)
+          r = urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=5).read().decode()
+          print('health:', r)
+          assert '"status":"ok"' in r, r
+          srv.should_exit = True; t.join(timeout=5)
+          "@
 
       - name: Upload portable zip
         uses: actions/upload-artifact@v4

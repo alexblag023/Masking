@@ -210,15 +210,18 @@ def build_installer_exe(py: Path, zip_path: Path) -> Path:
     staged.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(zip_path, staged)
     sep = ";" if os.name == "nt" else ":"
+    icon = PKG / "masking.ico"
+    logo = ROOT / "masking" / "static" / "logo-128.png"
     cmd = [py, "-m", "PyInstaller", "--clean", "--noconfirm", "--onefile", "--noconsole",
            "--name", name,
            "--add-data", f"{staged}{sep}.",
            "--distpath", str(DIST), "--workpath", str(ROOT / "build"),
            "--specpath", str(ROOT / "build"),
            str(PKG / "installer_app.py")]
-    icon = PKG / "masking.ico"
     if icon.is_file():
-        cmd += ["--icon", str(icon)]
+        cmd += ["--icon", str(icon), "--add-data", f"{icon}{sep}."]
+    if logo.is_file():
+        cmd += ["--add-data", f"{logo}{sep}."]
     run(cmd, cwd=ROOT)
     installer = DIST / f"{name}.exe"
     sign(installer)

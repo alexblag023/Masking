@@ -331,7 +331,20 @@ def run_gui() -> int:
     panel.pack(side="left", fill="y")
     panel.pack_propagate(False)
     tk.Frame(panel, bg=_BLUE, height=56).pack()
-    tk.Label(panel, text="🛡", bg=_BLUE, fg=_WHITE, font=(_UI_FONT, 72)).pack()
+    logo_img = None
+    try:
+        p = os.path.join(_base_dir(), "logo-128.png")
+        if os.path.isfile(p):
+            logo_img = tk.PhotoImage(file=p)
+    except Exception:
+        logo_img = None
+    if logo_img is not None:
+        lg = tk.Label(panel, image=logo_img, bg=_BLUE)
+        lg.image = logo_img                                     # защита от GC
+        lg.pack()
+    else:
+        tk.Label(panel, text="🛡", bg=_BLUE, fg=_WHITE,
+                 font=(_UI_FONT, 72)).pack()
     tk.Label(panel, text="Masking", bg=_BLUE, fg=_WHITE,
              font=(_UI_FONT, 22, "bold")).pack(pady=(16, 0))
     tk.Label(panel, text="Установщик приложения", bg=_BLUE, fg="#CFE0FF",
