@@ -10,8 +10,16 @@ from PyInstaller.utils.hooks import (
 
 # SPECPATH — папка самого .spec. Все пути строим от неё, чтобы сборка не
 # зависела от текущего каталога (в CI это важно).
+import pathlib
+
 ROOT = SPECPATH
-ICON = os.path.join(ROOT, "packaging", "masking.ico")
+# PyInstaller включает в exe по одному RT_ICON на каждый .ico в списке.
+# Multi-frame .ico он разбирает нестабильно (seek по кадрам в Pillow —
+# всегда возвращает основной), поэтому держим отдельный .ico для каждого
+# размера, и Windows Explorer сам выберет подходящий из RT_GROUP_ICON.
+_ICON_DIR = pathlib.Path(ROOT, "packaging", "icon")
+ICON = sorted(str(p) for p in _ICON_DIR.glob("masking-*.ico")) \
+       or [os.path.join(ROOT, "packaging", "masking.ico")]
 VERINFO = os.path.join(ROOT, "packaging", "version_info.txt")
 
 hidden = (
