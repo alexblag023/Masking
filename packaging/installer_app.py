@@ -141,6 +141,87 @@ def app_running(dest_exe: str | None) -> bool:
     return False
 
 
+def _read_port(dest: str) -> int | None:
+    """Читает порт, который сервис сохранил при старте (data/.port)."""
+    try:
+        with open(os.path.join(dest, "data", ".port"), encoding="utf-8") as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _http_shutdown(port: int, timeout: float = 3.0) -> bool:
+    """Шлёт POST /api/shutdown на 127.0.0.1:<port>. True, если сервис принял."""
+    import urllib.error, urllib.request
+    url = f"http://127.0.0.1:{port}/api/shutdown"
+    # Same-origin с точки зрения серверного middleware: нужны Host и Origin.
+    req = urllib.request.Request(url, method="POST", data=b"", headers={
+        "Host": f"127.0.0.1:{port}",
+        "Origin": f"http://127.0.0.1:{port}",
+        "Sec-Fetch-Site": "same-origin",
+        "Content-Length": "0",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return 200 <= r.status < 300
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ConnectionError):
+        return False
+
+
+def _taskkill(exe_name: str) -> bool:
+    """Жёсткая остановка процесса по имени (fallback). Только Windows."""
+    if os.name != "nt":
+        return False
+    import subprocess
+    try:
+        # /T — вместе с дочерними, /F — немедленно, /IM — по имени образа.
+        r = subprocess.run(
+            ["taskkill", "/F", "/T", "/IM", exe_name],
+            capture_output=True,
+            # CREATE_NO_WINDOW: не моргать консолью под noconsole-установщиком.
+            creationflags=0x08000000,
+        )
+        return r.returncode == 0
+    except OSError:
+        return False
+
+
+def stop_running_app(dest: str, exe_name: str = "masking-service.exe",
+                     wait_s: float = 15.0, log=print) -> bool:
+    """Корректно останавливает запущенное приложение в папке `dest`.
+
+    Порядок:
+      1) Если exe не занят — ничего делать не нужно.
+      2) POST /api/shutdown на известный порт (из data/.port, иначе 8765).
+      3) Ждём, пока exe не освободится, до wait_s секунд.
+      4) Если так и не освободился — taskkill /F /T /IM.
+    Возвращает True, если по итогу exe свободен.
+    """
+    dest_exe = os.path.join(dest, exe_name)
+    if not app_running(dest_exe):
+        return True
+
+    log("Останавливаю Masking…")
+    port = _read_port(dest) or 8765
+    _http_shutdown(port)
+
+    # Ждём с небольшими паузами, периодически повторяя shutdown.
+    deadline = __import__("time").monotonic() + wait_s
+    import time as _t
+    while _t.monotonic() < deadline:
+        _t.sleep(0.5)
+        if not app_running(dest_exe):
+            log("Masking остановлен.")
+            return True
+    # Grace истёк — пробуем taskkill.
+    log("Корректно остановить не удалось, завершаю принудительно…")
+    _taskkill(exe_name)
+    _t.sleep(1.0)
+    freed = not app_running(dest_exe)
+    log("Masking остановлен." if freed else "Не удалось остановить приложение.")
+    return freed
+
+
 def _ver_tuple(s: str) -> tuple:
     """'2026.10.1' → (2026, 10, 1). Нечисловые/пустые сегменты → 0."""
     return tuple(int(p) if p.strip().isdigit() else 0 for p in str(s or "").split("."))
@@ -221,6 +302,8 @@ _PROGRAM_ITEMS = {
 def do_install(target_parent: str, confirm=None, allow_downgrade: bool = False, log=print) -> str:
     """Устанавливает/переустанавливает/обновляет Masking в target_parent/<app>.
 
+    Если приложение запущено в целевой папке — сначала корректно останавливает
+    его (через POST /api/shutdown, затем taskkill при неудаче), а потом ставит.
     Данные (папка data/) сохраняются при совместимой схеме. При несовместимой
     schema всё дерево уходит в бэкап, затем ставится новая версия, а data/
     переносится из бэкапа — но при этом демаскирование по старой схеме может
@@ -231,6 +314,15 @@ def do_install(target_parent: str, confirm=None, allow_downgrade: bool = False, 
         src, new = _extract(tmp)
         app_name = os.path.basename(src)
         dest = os.path.join(target_parent, app_name)
+
+        # Если установленное приложение запущено — пробуем аккуратно остановить
+        # его сами. Без этого Windows не даст перезаписать masking-service.exe.
+        dest_exe = os.path.join(dest, "masking-service.exe")
+        if app_running(dest_exe):
+            if not stop_running_app(dest, log=log):
+                return ("Не удалось остановить запущенный Masking. "
+                        "Закройте приложение вручную и повторите установку.")
+
         exists = _is_installed(dest)
         inst = _read_compat(dest) if exists else None
 
@@ -441,32 +533,33 @@ def run_gui() -> int:
     close_job = {"id": None}
     state = {"installing": False}
 
+    _HINT_RUN = "Masking запущен — при установке он будет закрыт автоматически."
+
     def install():
         parent = target.get().strip()
         if not parent or not os.path.isdir(parent):
             messagebox.showwarning(APP_TITLE, "Выберите существующую папку установки.")
             return
-        if app_running(_dest_exe()):
-            status.config(text="Masking запущен — закройте приложение и повторите установку.", fg=_RED)
-            messagebox.showwarning(APP_TITLE,
-                "Masking запущен.\n\nЗакройте masking-service.exe и браузер,\n"
-                "затем нажмите «Установить» снова.")
-            return
         state["installing"] = True
         btn.config(state="disabled", bg="#9FB3E6")
-        status.config(text="Устанавливаю…", fg=_MUTED)
+        status.config(text="Готовлюсь…", fg=_MUTED)
         root.update()
         if close_job["id"] is not None:
             root.after_cancel(close_job["id"]); close_job["id"] = None
         try:
-            msg = do_install(parent, confirm=lambda m: messagebox.askyesno(APP_TITLE, m))
-            ok = not msg.startswith("Отменено")
+            def say(msg: str) -> None:
+                status.config(text=msg, fg=_MUTED)
+                root.update_idletasks()
+            msg = do_install(parent,
+                             confirm=lambda m: messagebox.askyesno(APP_TITLE, m),
+                             log=say)
+            ok = not msg.startswith("Отменено") and not msg.startswith("Не удалось остановить")
             if ok:
                 status.config(text=msg + "\nГотово. Окно закроется через минуту.", fg=_BLUE)
                 messagebox.showinfo(APP_TITLE, msg)
                 close_job["id"] = root.after(60000, root.destroy)
             else:
-                status.config(text=msg, fg="#9A6A00")
+                status.config(text=msg, fg=_RED if "Не удалось" in msg else "#9A6A00")
                 messagebox.showwarning(APP_TITLE, msg)
             refresh_hint()
         except Exception as e:
@@ -476,23 +569,21 @@ def run_gui() -> int:
             state["installing"] = False
             btn.config(state="normal", bg=_BLUE)
 
-    _WARN_RUN = "Masking запущен — закройте приложение, чтобы установить."
-
     def check_running():
+        # Информационный статус: если Masking запущен, показываем это
+        # пользователю. Кнопку «Установить» НЕ блокируем — установщик теперь
+        # сам корректно остановит приложение перед установкой.
         if not state["installing"]:
             try:
                 running = app_running(_dest_exe())
             except Exception:
                 running = False
-            if running:
-                btn.config(state="disabled", bg="#9FB3E6")
-                if status.cget("text") in ("", _WARN_RUN):
-                    status.config(text=_WARN_RUN, fg=_RED)
-            elif str(btn.cget("state")) == "disabled":
-                btn.config(state="normal", bg=_BLUE)
-                if status.cget("text") == _WARN_RUN:
-                    status.config(text="", fg=_MUTED)
-        root.after(1500, check_running)
+            cur_text = status.cget("text")
+            if running and cur_text in ("", _HINT_RUN):
+                status.config(text=_HINT_RUN, fg=_MUTED)
+            elif not running and cur_text == _HINT_RUN:
+                status.config(text="", fg=_MUTED)
+        root.after(2000, check_running)
 
     btn = tk.Button(btnrow, text="Установить", command=install, font=(_UI_FONT, 11, "bold"),
                     relief="flat", bd=0, highlightthickness=0, bg=_BLUE, fg=_WHITE,

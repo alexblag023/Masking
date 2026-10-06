@@ -40,6 +40,11 @@ def models_dir() -> Path:
     return Path(__file__).resolve().parent / "models"
 
 
+def port_file() -> Path:
+    """Файл с текущим портом сервиса (пишется при старте, читается установщиком)."""
+    return data_dir() / ".port"
+
+
 def writable_check() -> str | None:
     """Проверяет, что в папку данных можно писать. Возвращает текст ошибки или None."""
     try:

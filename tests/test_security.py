@@ -50,3 +50,15 @@ def test_heartbeat_resets_age():
     r = client.post("/api/heartbeat", headers={"sec-fetch-site": "same-origin"})
     assert r.status_code == 200 and r.json() == {"ok": True}
     assert heartbeat_age() < 1.0
+
+
+def test_shutdown_endpoint_calls_callback():
+    from masking.app import register_shutdown_callback, _shutdown_callbacks
+    flag = {"called": False}
+    register_shutdown_callback(lambda: flag.__setitem__("called", True))
+    try:
+        r = client.post("/api/shutdown", headers={"sec-fetch-site": "same-origin"})
+        assert r.status_code == 200 and r.json() == {"ok": True}
+        assert flag["called"] is True
+    finally:
+        _shutdown_callbacks.clear()
