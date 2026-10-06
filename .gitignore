@@ -3,3 +3,5 @@ dist/
 __pycache__/
 *.pyc
 .pytest_cache/
+.build-venv/
+build_stamp.py

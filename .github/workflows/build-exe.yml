@@ -1,4 +1,4 @@
-name: build-exe
+name: build-installer
 
 on:
   push:
@@ -14,13 +14,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install -r requirements-dev.txt
-      - run: python -m pytest -q
-      - run: python -m PyInstaller --noconfirm --clean masking-service.spec
-      - name: Smoke test exe
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Build installer package
+        # --skip-tests: уже прогнали отдельным шагом; --allow-dirty: Actions clones без тегов,
+        # лок-файла нет — build.py предупредит и соберёт из requirements.txt.
+        run: python packaging/build.py --allow-dirty --skip-tests
+
+      - name: Smoke test installer (silent install)
         shell: pwsh
         run: |
-          $p = Start-Process dist\masking-service\masking-service.exe -PassThru
+          $target = "$env:RUNNER_TEMP\mk_target"
+          New-Item -ItemType Directory -Path $target | Out-Null
+          Start-Process -FilePath "dist\Установить_Masking.exe" -ArgumentList "--target $target" -Wait -NoNewWindow
+          if (-not (Test-Path "$target\Masking\masking-service.exe")) { throw "Installer did not place masking-service.exe" }
+          Get-Content "$target\Masking\compat.txt"
+          # Запуск установленной программы и health-check.
+          $p = Start-Process "$target\Masking\masking-service.exe" -PassThru
           Start-Sleep -Seconds 15
           try {
             $r = Invoke-RestMethod http://127.0.0.1:8765/api/health
@@ -28,11 +43,21 @@ jobs:
           } finally {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           }
-      - name: Package portable zip
-        shell: pwsh
-        run: |
-          Compress-Archive -Path dist\masking-service\* -DestinationPath dist\masking-service-portable.zip
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
         with:
-          name: masking-service-portable-windows
-          path: dist/masking-service-portable.zip
+          name: masking-portable
+          path: dist/Masking_*.zip
+
+      - name: Upload installer exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: masking-installer
+          path: dist/Установить_Masking.exe
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: masking-sbom
+          path: dist/sbom.cdx.json
