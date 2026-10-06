@@ -36,32 +36,37 @@ jobs:
 
       - name: Verify exe has icon + version info embedded
         shell: pwsh
-        # Проверяем, что PyInstaller вшил ICO (RT_GROUP_ICON) и VERSIONINFO
-        # (CompanyName/Copyright) в основной exe. Если тест упал — проблема в
-        # сборке, а не в кэше иконок Windows на машине пользователя.
+        # pefile кладёт все иконки в одну RT_ICON-категорию; реальное число
+        # кадров — это число подзаписей (по размеру). Проверяем именно их.
         run: |
           python -m pip install -q pefile
           python -c @"
-          import glob, pefile, sys
+          import glob, pefile
+          RT_ICON = pefile.RESOURCE_TYPE['RT_ICON']
+          RT_GROUP_ICON = pefile.RESOURCE_TYPE['RT_GROUP_ICON']
+          RT_VERSION = pefile.RESOURCE_TYPE['RT_VERSION']
           exe = glob.glob('dist/masking-service/masking-service.exe')[0]
           pe = pefile.PE(exe, fast_load=False)
           pe.parse_data_directories()
-          kinds = {}
+          icons = groups = versions = 0
           for e in getattr(pe, 'DIRECTORY_ENTRY_RESOURCE', []).entries or []:
-              name = pefile.RESOURCE_TYPE.get(e.struct.Id, f'ID_{e.struct.Id}')
-              kinds[name] = kinds.get(name, 0) + 1
-          print('resources:', kinds)
-          assert 'RT_ICON' in kinds and kinds['RT_ICON'] >= 4, 'no icons in exe'
-          assert 'RT_GROUP_ICON' in kinds, 'no icon group'
-          assert 'RT_VERSION' in kinds, 'no version info'
-          # VERSIONINFO: ищем CompanyName и Copyright
-          fi = (pe.FileInfo or [])
+              if e.id == RT_ICON:
+                  icons = sum(1 for _ in e.directory.entries)
+              elif e.id == RT_GROUP_ICON:
+                  groups = sum(1 for _ in e.directory.entries)
+              elif e.id == RT_VERSION:
+                  versions = sum(1 for _ in e.directory.entries)
+          print(f'icons={icons}, groups={groups}, versions={versions}')
+          assert icons >= 4, f'exe has only {icons} icon frames, expected >=4'
+          assert groups >= 1, 'no RT_GROUP_ICON'
+          assert versions >= 1, 'no RT_VERSION'
+          # VERSIONINFO: CompanyName, LegalCopyright
           seen = set()
-          for e in (fi[0] if fi else []):
+          for e in (pe.FileInfo or [[]])[0]:
               for st in getattr(e, 'StringTable', []) or []:
-                  for k, v in st.entries.items():
+                  for k, _v in st.entries.items():
                       seen.add(k.decode('utf-8', 'ignore'))
-          assert 'CompanyName' in seen and 'LegalCopyright' in seen, f'missing fields: {seen}'
+          assert 'CompanyName' in seen and 'LegalCopyright' in seen, f'missing: {seen}'
           print('version info OK:', sorted(seen))
           "@
 
