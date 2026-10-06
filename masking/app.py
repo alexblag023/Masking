@@ -131,6 +131,31 @@ def api_heartbeat() -> dict:
     return {"ok": True}
 
 
+# ----- Shutdown -----------------------------------------------------------
+#
+# Установщик использует этот эндпоинт, чтобы корректно остановить
+# запущенное приложение перед обновлением (вместо того чтобы просить
+# пользователя закрыть exe вручную).
+_shutdown_callbacks: list = []
+
+
+def register_shutdown_callback(fn) -> None:
+    """main.py регистрирует здесь функцию, которая устанавливает server.should_exit."""
+    _shutdown_callbacks.append(fn)
+
+
+@app.post("/api/shutdown")
+def api_shutdown() -> dict:
+    """Инициирует корректное завершение сервиса. Доступен только с loopback
+    (host-check уже сделан SecurityHeadersMiddleware)."""
+    for fn in _shutdown_callbacks:
+        try:
+            fn()
+        except Exception:
+            pass
+    return {"ok": True}
+
+
 # ----- Проекты --------------------------------------------------------------
 
 @app.get("/api/projects")

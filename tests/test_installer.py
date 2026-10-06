@@ -131,3 +131,19 @@ def test_preview_action(tmp_path, monkeypatch):
     monkeypatch.setenv("MASKING_INSTALLER_ZIP",
                         str(_make_fake_package(tmp_path, "2026.11.1")))
     assert "обновление" in inst.preview_action(str(target)).lower()
+
+
+def test_stop_running_app_noop_when_not_running(tmp_path):
+    """Если exe не занят — stop_running_app сразу True, ничего не ломает."""
+    (tmp_path / "masking-service.exe").write_bytes(b"MZ fake")
+    assert inst.stop_running_app(str(tmp_path), log=lambda *_: None) is True
+
+
+def test_read_port_from_data_dir(tmp_path):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / ".port").write_text("12345", encoding="utf-8")
+    assert inst._read_port(str(tmp_path)) == 12345
+    (tmp_path / "data" / ".port").write_text("not-a-number")
+    assert inst._read_port(str(tmp_path)) is None
+    (tmp_path / "data" / ".port").unlink()
+    assert inst._read_port(str(tmp_path)) is None

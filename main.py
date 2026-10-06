@@ -34,8 +34,8 @@ except Exception:
 
 import uvicorn
 
-from masking.app import app
-from masking.paths import base_dir, writable_check
+from masking.app import app, register_shutdown_callback
+from masking.paths import base_dir, port_file, writable_check
 from masking.version import VERSION
 
 HOST = "127.0.0.1"
@@ -156,6 +156,25 @@ def main() -> int:
         t.join(timeout=5)
         return 3
 
+    # Регистрируем две вещи:
+    # 1) порт — установщик прочтёт его, чтобы послать /api/shutdown;
+    # 2) callback, который устанавливает should_exit и закрывает окно pywebview.
+    try:
+        port_file().write_text(str(port), encoding="utf-8")
+    except OSError:
+        pass
+
+    def _stop() -> None:
+        server.should_exit = True
+        try:
+            import webview
+            for w in list(getattr(webview, "windows", [])):
+                try: w.destroy()
+                except Exception: pass
+        except Exception:
+            pass
+    register_shutdown_callback(_stop)
+
     # Watchdog: если UI не пингует heartbeat ~30 секунд (окно/вкладка закрыты),
     # выходим. Это основной механизм автозавершения, когда pywebview не
     # удалось открыть и UI крутится в системном браузере.
@@ -176,6 +195,10 @@ def main() -> int:
     finally:
         server.should_exit = True
         t.join(timeout=5)
+        try:
+            port_file().unlink(missing_ok=True)
+        except OSError:
+            pass
         _log.info("Приложение закрыто")
     return 0
 
