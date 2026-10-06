@@ -43,3 +43,10 @@ def test_security_headers_present():
     assert r.headers["X-Content-Type-Options"] == "nosniff"
     assert r.headers["Referrer-Policy"] == "no-referrer"
     assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
+
+
+def test_heartbeat_resets_age():
+    from masking.app import heartbeat_age
+    r = client.post("/api/heartbeat", headers={"sec-fetch-site": "same-origin"})
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    assert heartbeat_age() < 1.0
