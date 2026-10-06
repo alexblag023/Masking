@@ -1,0 +1,31 @@
+name: build-exe
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - run: python -m PyInstaller --noconfirm --clean masking-service.spec
+      - name: Smoke test exe
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\masking-service.exe -PassThru
+          Start-Sleep -Seconds 8
+          $r = Invoke-RestMethod http://127.0.0.1:8765/api/health
+          if ($r.status -ne "ok") { throw "health check failed" }
+          Stop-Process $p
+      - uses: actions/upload-artifact@v4
+        with:
+          name: masking-service-windows
+          path: dist/masking-service.exe
