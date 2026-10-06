@@ -1,20 +1,23 @@
-"""Локальный HTTP-сервис маскирования документов Word и Excel."""
+"""Локальный HTTP-сервис маскирования документов. Проекты, разделы, история."""
 import json
+import sqlite3
 from pathlib import Path
-from typing import Optional
 from urllib.parse import quote
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from . import __version__
-from .detectors import LABELS
-from .docx_proc import mask_docx
-from .masker import MODES, Masker
-from .xlsx_proc import mask_xlsx
+from . import __version__, registry
+from .docx_proc import mask_docx, unmask_docx
+from .paths import base_dir, data_dir, writable_check
+from .reversible import ReversibleMasker, ReversibleUnmasker
+from .xlsx_proc import mask_xlsx, unmask_xlsx
 
 MAX_SIZE = 50 * 1024 * 1024
-PROCESSORS = {".docx": mask_docx, ".xlsx": mask_xlsx}
+MASK_PROCESSORS = {".docx": mask_docx, ".xlsx": mask_xlsx}
+UNMASK_PROCESSORS = {".docx": unmask_docx, ".xlsx": unmask_xlsx}
 MEDIA_TYPES = {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -22,91 +25,185 @@ MEDIA_TYPES = {
 
 app = FastAPI(title="Masking service", version=__version__, docs_url="/docs", redoc_url=None)
 
-PAGE = """<!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><title>Маскирование документов</title>
-<style>
-body{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 16px;color:#222}
-fieldset{margin:16px 0;border:1px solid #ccc;border-radius:6px}
-label{display:inline-block;margin:2px 12px 2px 0}
-button{padding:8px 20px;font-size:1rem;cursor:pointer}
-#result{margin-top:16px;white-space:pre-wrap}
-</style></head><body>
-<h1>Маскирование персональных данных</h1>
-<p>Файлы обрабатываются локально и не покидают ваш компьютер. Форматы: .docx, .xlsx</p>
-<form id="f">
-<input type="file" name="file" accept=".docx,.xlsx" required>
-<fieldset><legend>Режим</legend>
-<label><input type="radio" name="mode" value="tag" checked> [ФИО]</label>
-<label><input type="radio" name="mode" value="pseudo"> [ФИО_1] (одинаковые значения — одинаковый номер)</label>
-<label><input type="radio" name="mode" value="stars"> ***</label>
-</fieldset>
-<fieldset><legend>Что маскировать</legend>__KINDS__</fieldset>
-<button type="submit">Замаскировать и скачать</button>
-</form>
-<div id="result"></div>
-<script>
-document.getElementById('f').addEventListener('submit', async e => {
-  e.preventDefault();
-  const out = document.getElementById('result');
-  out.textContent = 'Обработка...';
-  const resp = await fetch('/api/mask', {method:'POST', body:new FormData(e.target)});
-  if (!resp.ok) { out.textContent = 'Ошибка: ' + ((await resp.json()).detail || resp.status); return; }
-  const stats = JSON.parse(resp.headers.get('X-Masking-Stats') || '{}');
-  const name = decodeURIComponent(resp.headers.get('Content-Disposition').split("filename*=UTF-8''")[1]);
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(await resp.blob()); a.download = name; a.click();
-  const total = Object.values(stats).reduce((x, y) => x + y, 0);
-  out.textContent = 'Готово: ' + name + '\\nЗамаскировано: ' + total +
-    (total ? '\\n' + Object.entries(stats).map(([k, v]) => k + ': ' + v).join('\\n') : '');
-});
-</script></body></html>"""
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
+if _STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
+
+# ----- Схемы запросов ------------------------------------------------------
+
+class ProjectIn(BaseModel):
+    name: str
+
+
+# ----- Сервисные эндпоинты --------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    kinds = "".join(
-        f'<label><input type="checkbox" name="kinds" value="{k}" checked> {v}</label>'
-        for k, v in LABELS.items()
-    )
-    return PAGE.replace("__KINDS__", kinds)
+def index() -> FileResponse:
+    return FileResponse(_STATIC_DIR / "index.html", media_type="text/html; charset=utf-8")
 
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "version": __version__}
+    err = writable_check()
+    return {
+        "status": "ok" if not err else "error",
+        "version": __version__,
+        "data_dir": str(data_dir()),
+        "base_dir": str(base_dir()),
+        "error": err,
+    }
 
 
-@app.post("/api/mask")
-async def mask(
-    file: UploadFile = File(...),
-    mode: str = Form("tag"),
-    kinds: Optional[list[str]] = Form(None),
-) -> Response:
+# ----- Проекты --------------------------------------------------------------
+
+@app.get("/api/projects")
+def projects_list() -> list[dict]:
+    return registry.list_projects()
+
+
+@app.post("/api/projects", status_code=201)
+def projects_create(body: ProjectIn) -> dict:
+    try:
+        return registry.create_project(body.name)
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "Проект с таким названием уже существует")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/projects/{pid}")
+def projects_get(pid: int) -> dict:
+    try:
+        return registry.get_project(pid)
+    except LookupError:
+        raise HTTPException(404, "Проект не найден")
+
+
+@app.patch("/api/projects/{pid}")
+def projects_rename(pid: int, body: ProjectIn) -> dict:
+    try:
+        return registry.rename_project(pid, body.name)
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "Название уже занято")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/projects/{pid}", status_code=204)
+def projects_delete(pid: int) -> Response:
+    try:
+        registry.delete_project(pid)
+    except LookupError:
+        raise HTTPException(404, "Проект не найден")
+    return Response(status_code=204)
+
+
+# ----- Маскирование и демаскирование ---------------------------------------
+
+def _ensure_project(pid: int) -> dict:
+    try:
+        return registry.get_project(pid)
+    except LookupError:
+        raise HTTPException(404, "Проект не найден")
+
+
+def _validate_file(file: UploadFile, data: bytes) -> str:
     ext = Path(file.filename or "").suffix.lower()
-    if ext not in PROCESSORS:
-        raise HTTPException(415, "Поддерживаются только .docx и .xlsx (старые .doc/.xls сохраните в новом формате)")
-    if mode not in MODES:
-        raise HTTPException(400, f"mode должен быть одним из: {', '.join(MODES)}")
-    selected = set(kinds) if kinds else None
-    if selected and not selected <= set(LABELS):
-        raise HTTPException(400, f"Неизвестные типы данных: {', '.join(sorted(selected - set(LABELS)))}")
-
-    data = await file.read()
+    if ext not in MASK_PROCESSORS:
+        raise HTTPException(415, "Поддерживаются только .docx и .xlsx")
     if len(data) > MAX_SIZE:
         raise HTTPException(413, "Файл больше 50 МБ")
+    return ext
 
-    masker = Masker(mode, selected)
+
+@app.post("/api/projects/{pid}/mask")
+async def op_mask(pid: int, file: UploadFile = File(...)) -> Response:
+    _ensure_project(pid)
+    data = await file.read()
+    ext = _validate_file(file, data)
+    masker = ReversibleMasker(pid)
     try:
-        result = PROCESSORS[ext](data, masker)
-    except Exception as exc:  # битый или защищённый паролем файл
+        result = MASK_PROCESSORS[ext](data, masker)
+    except Exception as exc:
         raise HTTPException(422, f"Не удалось обработать файл: {exc}") from exc
 
+    did_in = registry.add_document(pid, "mask", "in", file.filename, ext, data)
     out_name = f"{Path(file.filename).stem}.masked{ext}"
+    did_out = registry.add_document(
+        pid, "mask", "out", out_name, ext, result,
+        parent_id=did_in, stats=masker.stats.as_dict(),
+    )
+    masker.flush(did_in)
+
     return Response(
         result,
         media_type=MEDIA_TYPES[ext],
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{quote(out_name)}",
-            "X-Masking-Stats": json.dumps(dict(masker.stats)),
+            "X-Masking-Stats": json.dumps(masker.stats.as_dict()),
+            "X-Document-Id": str(did_out),
+        },
+    )
+
+
+@app.post("/api/projects/{pid}/unmask")
+async def op_unmask(pid: int, file: UploadFile = File(...)) -> Response:
+    _ensure_project(pid)
+    data = await file.read()
+    ext = _validate_file(file, data)
+    unmasker = ReversibleUnmasker(pid)
+    try:
+        result = UNMASK_PROCESSORS[ext](data, unmasker)
+    except Exception as exc:
+        raise HTTPException(422, f"Не удалось обработать файл: {exc}") from exc
+
+    stats = unmasker.stats.as_dict()
+    did_in = registry.add_document(pid, "unmask", "in", file.filename, ext, data)
+    out_name = f"{Path(file.filename).stem}.restored{ext}"
+    did_out = registry.add_document(
+        pid, "unmask", "out", out_name, ext, result,
+        parent_id=did_in, stats=stats,
+    )
+    return Response(
+        result,
+        media_type=MEDIA_TYPES[ext],
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(out_name)}",
+            "X-Unmasking-Stats": json.dumps(stats),
+            "X-Document-Id": str(did_out),
+        },
+    )
+
+
+# ----- Сущности и история ---------------------------------------------------
+
+@app.get("/api/projects/{pid}/entities")
+def entities(pid: int, kind: str | None = None, q: str | None = None) -> list[dict]:
+    _ensure_project(pid)
+    if kind and kind not in ("FIO", "ADDR"):
+        raise HTTPException(400, "kind: FIO | ADDR")
+    return registry.list_entities(pid, kind, q)
+
+
+@app.get("/api/projects/{pid}/history/{op}")
+def history(pid: int, op: str) -> list[dict]:
+    _ensure_project(pid)
+    if op not in ("mask", "unmask"):
+        raise HTTPException(400, "op: mask | unmask")
+    return registry.list_history(pid, op)
+
+
+@app.get("/api/documents/{did}/download")
+def download(did: int) -> Response:
+    try:
+        meta, data = registry.document_data(did)
+    except LookupError:
+        raise HTTPException(404, "Документ не найден")
+    return Response(
+        data,
+        media_type=MEDIA_TYPES.get(meta["ext"], "application/octet-stream"),
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(meta['filename'])}",
         },
     )
