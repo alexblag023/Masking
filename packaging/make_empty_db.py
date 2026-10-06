@@ -12,6 +12,14 @@ import sqlite3
 import sys
 from pathlib import Path
 
+# UTF-8 stdout: скрипт запускается subprocess'ом и print с кириллицей
+# иначе падает на Windows (cp1252).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from masking import db  # noqa: E402
