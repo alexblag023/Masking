@@ -6,9 +6,17 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Минимальные привилегии токена workflow (ответ на CKV2_GHA_1).
+# Явный read-only перекрывает умолчания; шаги, которым нужна запись, задают
+# её точечно.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
