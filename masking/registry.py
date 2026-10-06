@@ -104,7 +104,11 @@ def entity_key(kind: str, canonical: str, gender: Optional[str]) -> str:
     if kind == "FIO":
         key = fio_match_key(canonical)
         return "|".join(str(x) for x in (key or (canonical.lower(),)))
-    return _addr_key(canonical)
+    if kind in ("ADDR", "EMAIL"):
+        return _addr_key(canonical)
+    # Числовые типы: сравниваем только по цифрам, игнорируя пробелы/дефисы/скобки.
+    # Так «+7 916 123-45-67» и «89161234567» дают один ключ.
+    return "".join(c for c in canonical if c.isdigit()) or canonical.lower()
 
 
 def find_or_create_entity(
