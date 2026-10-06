@@ -10,8 +10,8 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -54,20 +54,37 @@ jobs:
           srv.should_exit = True; t.join(timeout=5)
           "@
 
+      - name: Package source archive (for SAST / code review)
+        shell: pwsh
+        # Воспроизводимый снимок исходников на текущем коммите, без .git/build/dist.
+        # Включает модели NER (~29 МБ) — чтобы содержимое совпадало с тем, из чего
+        # собран exe, и чтобы на стороне получателя SBOM/SHA256 бились.
+        run: |
+          $sha = (git rev-parse --short HEAD)
+          $zip = "dist\Masking_source_$sha.zip"
+          git archive --format=zip --output=$zip HEAD
+          Get-Item $zip | Select-Object Name, Length
+
       - name: Upload portable zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: masking-portable
           path: dist/Masking_*.zip
 
       - name: Upload installer exe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: masking-installer
           path: dist/Установить_Masking.exe
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: masking-sbom
           path: dist/sbom.cdx.json
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v5
+        with:
+          name: masking-source
+          path: dist/Masking_source_*.zip
