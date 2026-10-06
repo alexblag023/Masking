@@ -6,8 +6,21 @@
 """
 import re
 
-KINDS = {"ФИО": "FIO", "АДРЕС": "ADDR"}
+KINDS = {
+    "ФИО":     "FIO",
+    "АДРЕС":   "ADDR",
+    "ТЕЛ":     "PHONE",
+    "СНИЛС":   "SNILS",
+    "ИНН":     "INN",
+    "КАРТА":   "CARD",
+    "ПАСПОРТ": "PASSPORT",
+    "ДАТА":    "DATE",
+    "EMAIL":   "EMAIL",
+    "ЦИФ":     "DIGITS",
+}
 KIND_RU = {v: k for k, v in KINDS.items()}
+# Какие типы несут падеж (только ФИО по-настоящему склоняются).
+CASED_KINDS = {"FIO"}
 
 # Коды падежей в токене -> коды pymorphy3.
 CASE_RU2PM = {
@@ -17,8 +30,9 @@ CASE_RU2PM = {
 CASE_PM2RU = {v: k for k, v in CASE_RU2PM.items()}
 
 # Терпимое к искажениям регулярное выражение для поиска токенов в тексте.
+_KIND_ALT = "|".join(sorted(KINDS, key=len, reverse=True))
 TOKEN_RE = re.compile(
-    r"[\[［]\s*(ФИО|АДРЕС)\s*[_\-–‑ ]\s*(\d{1,6})\s*"
+    rf"[\[［]\s*({_KIND_ALT})\s*[_\-–‑ ]\s*(\d{{1,6}})\s*"
     r"(?:[:：]\s*(им|род|дат|вин|тв|пр)\s*)?[\]］]",
     re.IGNORECASE,
 )

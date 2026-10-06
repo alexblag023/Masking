@@ -58,11 +58,14 @@ _FIO_UP_RE = re.compile(
 )
 
 
+from .digits import find_digit_spans
+
+
 @dataclass(frozen=True)
 class Span:
     start: int
     end: int
-    kind: str  # 'FIO' | 'ADDR'
+    kind: str  # 'FIO' | 'ADDR' | 'PHONE' | 'SNILS' | 'INN' | 'CARD' | 'PASSPORT' | 'DATE' | 'EMAIL' | 'DIGITS'
     confidence: float = 1.0
 
 
@@ -110,16 +113,23 @@ def _find_addresses(text: str) -> list[tuple[int, int]]:
     return merged
 
 
-def find_entities(text: str, ner_spans: Optional[list[tuple[int, int, str]]] = None) -> list[Span]:
-    """Возвращает отсортированный список непересекающихся ФИО/адресов.
+def find_entities(
+    text: str,
+    ner_spans: Optional[list[tuple[int, int, str]]] = None,
+    kinds: Optional[frozenset[str]] = None,
+) -> list[Span]:
+    """Возвращает отсортированный список непересекающихся сущностей.
 
-    `ner_spans` — результат masking.ner.spans(text); если None, NER не вызывается
-    (удобно для юнит-тестов на regex).
+    `ner_spans` — результат masking.ner.spans(text); если None, NER не вызывается.
+    `kinds` — если задан, в результате оставляем только эти типы, но
+    промежуточные (адрес/ФИО) всё равно считаются для подавления пересечений
+    с цифровыми находками.
     """
     if not text or text.isspace():
         return []
 
-    addrs = _find_addresses(text)
+    want_addr = kinds is None or "ADDR" in kinds
+    addrs = _find_addresses(text) if want_addr else []
 
     # ФИО от NER (PER) и наши regex. LOC из NER не используем: он слишком шумный
     # на названиях улиц и городов, которые уже покрывает адресный regex.
@@ -149,6 +159,22 @@ def find_entities(text: str, ner_spans: Optional[list[tuple[int, int, str]]] = N
         fios.append((s, e, "FIO"))
 
     result = [Span(s, e, "FIO") for s, e, _ in fios]
-    result += [Span(s, e, "ADDR") for s, e in addrs]
+    if want_addr:
+        result += [Span(s, e, "ADDR") for s, e in addrs]
+
+    # Числа: все распознанные паттерны + универсальный DIGITS. Пропускаем те,
+    # что уже лежат внутри ФИО/адреса (например, цифры в самом адресе).
+    want_digits = kinds is None or kinds & {"PHONE", "SNILS", "INN", "CARD",
+                                             "PASSPORT", "DATE", "EMAIL", "DIGITS"}
+    if want_digits:
+        taken = [(s.start, s.end) for s in result]
+        for ds, de, dk in find_digit_spans(text):
+            if kinds is not None and dk not in kinds:
+                continue
+            if any(not (de <= ps or ds >= pe) for ps, pe in taken):
+                continue
+            result.append(Span(ds, de, dk))
+            taken.append((ds, de))
+
     result.sort(key=lambda x: x.start)
     return result

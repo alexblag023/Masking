@@ -38,7 +38,8 @@ CREATE INDEX IF NOT EXISTS ix_doc_proj ON document(project_id, op, created_at DE
 CREATE TABLE IF NOT EXISTS entity(
   id         INTEGER PRIMARY KEY,
   project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-  kind       TEXT NOT NULL CHECK(kind IN ('FIO','ADDR')),
+  kind       TEXT NOT NULL CHECK(kind IN
+    ('FIO','ADDR','PHONE','SNILS','INN','CARD','PASSPORT','DATE','EMAIL','DIGITS')),
   seq        INTEGER NOT NULL,
   canonical  TEXT NOT NULL,          -- ФИО в им. п. / адрес как встретился
   gender     TEXT,                   -- 'masc' | 'femn' | NULL

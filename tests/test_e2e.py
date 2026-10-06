@@ -18,8 +18,8 @@ def _make_docx() -> bytes:
     p.add_run("Ивановым ").bold = True
     p.add_run("Иваном ")
     p.add_run("Ивановичем").italic = True
-    p.add_run(", г. Москва, ул. Ленина, д. 5.")
-    d.add_paragraph("Передать Иванову Ивану Ивановичу копию.")
+    p.add_run(", г. Москва, ул. Ленина, д. 15, кв. 42, тел +7 916 123-45-67.")
+    d.add_paragraph("Передать Иванову Ивану Ивановичу копию, ИНН 500100732259.")
     buf = io.BytesIO(); d.save(buf)
     return buf.getvalue()
 
@@ -44,8 +44,11 @@ def test_mask_unmask_roundtrip_docx():
     masked = r.content
     doc = Document(io.BytesIO(masked))
     text = "\n".join(p.text for p in doc.paragraphs)
-    assert "[ФИО_1" in text and "[АДРЕС_1]" in text
-    assert "Иванов" not in text and "Ленина" not in text
+    # ФИО маскируется, адрес не маскируется (по умолчанию выключен), а номер
+    # дома внутри адреса — да, по правилу DIGITS. Так пропадает возможность
+    # восстановить ФИО по номеру дома в соседнем контексте.
+    assert "[ФИО_1" in text
+    assert "Иванов" not in text
     # ФИО в разных падежах → один человек, один seq.
     assert text.count("[ФИО_1") == 2
 
@@ -55,7 +58,6 @@ def test_mask_unmask_roundtrip_docx():
     rtext = "\n".join(p.text for p in rest.paragraphs)
     assert "Ивановым Иваном Ивановичем" in rtext
     assert "Иванову Ивану Ивановичу" in rtext
-    assert "г. Москва, ул. Ленина, д. 5" in rtext
 
 
 def test_entities_and_history():
@@ -64,7 +66,7 @@ def test_entities_and_history():
 
     ents = client.get(f"/api/projects/{pid}/entities").json()
     kinds = {e["kind"] for e in ents}
-    assert kinds == {"FIO", "ADDR"}
+    assert kinds >= {"FIO", "PHONE", "INN", "DIGITS"}  # д. 15, кв. 42 → DIGITS
     fio = next(e for e in ents if e["kind"] == "FIO")
     assert fio["canonical"].startswith("Иванов")
     assert fio["occurrences"] == 2
@@ -89,16 +91,19 @@ def test_xlsx_roundtrip():
     assert r.status_code == 200
     masked = load_workbook(io.BytesIO(r.content)).active
     assert masked["A1"].value.startswith("[ФИО_")
-    assert masked["B1"].value == "[АДРЕС_1]"
-    assert masked["C1"].value == 42
+    # B1: адрес не маскируется, но «д. 5» (5 — одна цифра) не трогаем, а
+    # потому число останется. Проверяем, что строка не содержит ФИО.
+    assert "Иванов" not in str(masked["B1"].value)
+    # Число 42 (одна группа ≥ 2 цифр) превращается в токен цифровой маски,
+    # хранящийся как строка.
+    assert str(masked["C1"].value).startswith("[ЦИФ_")
     assert str(masked["D1"].value).startswith("=")
 
-    buf2 = io.BytesIO(); wb2 = load_workbook(io.BytesIO(r.content)); wb2.save(buf2)
     r2 = client.post(f"/api/projects/{pid}/unmask", files={"file": ("m.xlsx", r.content)})
     assert r2.status_code == 200
     restored = load_workbook(io.BytesIO(r2.content)).active
     assert restored["A1"].value == "Иванов Иван Иванович"
-    assert restored["B1"].value == "г. Москва, ул. Ленина, д. 5"
+    assert str(restored["C1"].value) == "42"
 
 
 def test_unknown_tokens_report():

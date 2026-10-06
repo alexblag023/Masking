@@ -30,17 +30,23 @@ class MaskStats:
         }
 
 
+DEFAULT_KINDS = frozenset({
+    "FIO", "PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DATE", "EMAIL", "DIGITS",
+})
+
+
 class ReversibleMasker:
     """Один экземпляр на обработку документа. Привязан к проекту.
 
-    `kinds` — какие типы маскировать. По умолчанию ФИО и адреса. Остальные
-    типы (телефоны/ИНН/...) обрабатываются необратимым путём, см. masker.py.
+    `kinds` — какие типы маскировать. По умолчанию ФИО и все числовые типы;
+    адреса не маскируются, так как номера домов и квартир перехватывает
+    универсальный DIGITS.
     """
 
     def __init__(
         self,
         project_id: int,
-        kinds: frozenset[str] = frozenset({"FIO", "ADDR"}),
+        kinds: frozenset[str] = DEFAULT_KINDS,
         detect_fn: Callable[[str], list] | None = None,
     ):
         self.project_id = project_id
@@ -49,7 +55,11 @@ class ReversibleMasker:
         self._known_seqs: set[int] = {
             e["id"] for e in registry.list_entities(project_id)
         }
-        self._detect = detect_fn or (lambda t: find_entities(t, ner_spans(t)))
+        # NER вызываем только если ищем ФИО/адреса — для чисел это ненужная работа.
+        use_ner = bool(kinds & {"FIO", "ADDR"})
+        self._detect = detect_fn or (
+            lambda t: find_entities(t, ner_spans(t) if use_ner else None, kinds)
+        )
         self._pending: list[tuple[int, str, str]] = []
         self._current_location: str = "unknown"
 
@@ -97,8 +107,9 @@ class ReversibleMasker:
             )
             registry.remember_form(entity["id"], case_code, surface)
             return entity, case_code
-        # Адрес: без падежей, канон = первая встреченная форма.
-        entity = registry.find_or_create_entity(self.project_id, "ADDR", surface, None)
+        # Прочие типы (адрес, числа, email): канон = первая встреченная форма,
+        # без падежей. Дедупликация — по match_key в registry.entity_key.
+        entity = registry.find_or_create_entity(self.project_id, span.kind, surface, None)
         registry.remember_form(entity["id"], "nomn", surface)
         return entity, "nomn"
 
@@ -134,7 +145,7 @@ class ReversibleUnmasker:
         entity = self._cache[key]
         if entity is None:
             return None
-        if kind == "ADDR":
+        if kind != "FIO":
             return entity["canonical"]
         # ФИО: сначала сохранённая форма в этом падеже, иначе склоняем.
         eid = entity["id"]
