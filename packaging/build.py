@@ -211,6 +211,7 @@ def build_installer_exe(py: Path, zip_path: Path) -> Path:
     shutil.copy2(zip_path, staged)
     sep = ";" if os.name == "nt" else ":"
     icon = PKG / "masking.ico"
+    verinfo = PKG / "version_info.txt"
     logo = ROOT / "masking" / "static" / "logo-128.png"
     cmd = [py, "-m", "PyInstaller", "--clean", "--noconfirm", "--onefile", "--noconsole",
            "--name", name,
@@ -220,6 +221,8 @@ def build_installer_exe(py: Path, zip_path: Path) -> Path:
            str(PKG / "installer_app.py")]
     if icon.is_file():
         cmd += ["--icon", str(icon), "--add-data", f"{icon}{sep}."]
+    if verinfo.is_file():
+        cmd += ["--version-file", str(verinfo)]
     if logo.is_file():
         cmd += ["--add-data", f"{logo}{sep}."]
     run(cmd, cwd=ROOT)
