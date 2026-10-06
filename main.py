@@ -17,6 +17,14 @@ from pathlib import Path
 # Делаем import корректным при запуске `python main.py` из любой папки.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# В сборке PyInstaller `--noconsole` sys.stdout / sys.stderr равны None, из-за
+# чего падает uvicorn.logging (`sys.stdout.isatty()` → AttributeError на None).
+# Подставляем devnull до любого импорта, который может их читать.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8", buffering=1)
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8", buffering=1)
+
 # UTF-8 stdout: Windows-консоль (если --console) по умолчанию cp1252.
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -92,7 +100,10 @@ def main() -> int:
     url = f"http://{HOST}:{port}/"
     _log.info("Старт сервиса на %s", url)
 
-    config = uvicorn.Config(app, host=HOST, port=port, log_level="warning", access_log=False)
+    # log_config=None убирает дефолтную конфигурацию логирования uvicorn,
+    # которая в noconsole-сборке падала на отсутствующем sys.stdout.
+    config = uvicorn.Config(app, host=HOST, port=port,
+                            log_level="warning", access_log=False, log_config=None)
     server = uvicorn.Server(config)
     t = threading.Thread(target=_run_server, args=(server,), daemon=True, name="uvicorn")
     t.start()
