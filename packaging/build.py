@@ -133,7 +133,28 @@ def build_app(py: Path) -> Path:
     folder = DIST / "masking-service"
     if not folder.is_dir():
         raise RuntimeError(f"Ожидалась папка {folder}")
+    # Прописываем все иконки принудительно: через spec icon=[...] PyInstaller
+    # 6.22 на Windows по непонятным причинам сохраняет только один RT_ICON
+    # (проверено CI'ной проверкой). Повторный CopyIcons перезаписывает
+    # ресурсы exe всем нужным набором размеров (16..256), и Explorer
+    # перестаёт показывать «пустую» иконку в маленьких размерах.
+    if os.name == "nt":
+        _force_icons(py, folder / "masking-service.exe")
     return folder
+
+
+def _force_icons(py: Path, exe: Path) -> None:
+    icon_dir = ROOT / "packaging" / "icon"
+    icons = sorted(str(p) for p in icon_dir.glob("masking-*.ico"))
+    if not icons or not exe.is_file():
+        return
+    code = (
+        "import sys\n"
+        "from PyInstaller.utils.win32.icon import CopyIcons\n"
+        "CopyIcons(sys.argv[1], sys.argv[2:])\n"
+    )
+    run([py, "-c", code, str(exe), *icons])
+    print(f"Переписал иконки exe: {len(icons)} размеров")
 
 
 def generate_sbom(py: Path) -> Path | None:
