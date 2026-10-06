@@ -34,6 +34,37 @@ jobs:
         # лок-файла нет — build.py предупредит и соберёт из requirements.txt.
         run: python packaging/build.py --allow-dirty --skip-tests
 
+      - name: Verify exe has icon + version info embedded
+        shell: pwsh
+        # Проверяем, что PyInstaller вшил ICO (RT_GROUP_ICON) и VERSIONINFO
+        # (CompanyName/Copyright) в основной exe. Если тест упал — проблема в
+        # сборке, а не в кэше иконок Windows на машине пользователя.
+        run: |
+          python -m pip install -q pefile
+          python -c @"
+          import glob, pefile, sys
+          exe = glob.glob('dist/masking-service/masking-service.exe')[0]
+          pe = pefile.PE(exe, fast_load=False)
+          pe.parse_data_directories()
+          kinds = {}
+          for e in getattr(pe, 'DIRECTORY_ENTRY_RESOURCE', []).entries or []:
+              name = pefile.RESOURCE_TYPE.get(e.struct.Id, f'ID_{e.struct.Id}')
+              kinds[name] = kinds.get(name, 0) + 1
+          print('resources:', kinds)
+          assert 'RT_ICON' in kinds and kinds['RT_ICON'] >= 4, 'no icons in exe'
+          assert 'RT_GROUP_ICON' in kinds, 'no icon group'
+          assert 'RT_VERSION' in kinds, 'no version info'
+          # VERSIONINFO: ищем CompanyName и Copyright
+          fi = (pe.FileInfo or [])
+          seen = set()
+          for e in (fi[0] if fi else []):
+              for st in getattr(e, 'StringTable', []) or []:
+                  for k, v in st.entries.items():
+                      seen.add(k.decode('utf-8', 'ignore'))
+          assert 'CompanyName' in seen and 'LegalCopyright' in seen, f'missing fields: {seen}'
+          print('version info OK:', sorted(seen))
+          "@
+
       - name: Smoke test installer (silent install + headless service start)
         shell: pwsh
         run: |

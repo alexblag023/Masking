@@ -12,6 +12,7 @@ from PyInstaller.utils.hooks import (
 # зависела от текущего каталога (в CI это важно).
 ROOT = SPECPATH
 ICON = os.path.join(ROOT, "packaging", "masking.ico")
+VERINFO = os.path.join(ROOT, "packaging", "version_info.txt")
 
 hidden = (
     collect_submodules("uvicorn")
@@ -51,6 +52,7 @@ exe = EXE(
     name="masking-service",
     console=False,            # без чёрного окна консоли
     icon=ICON,
+    version=VERINFO,          # Properties → Details (CompanyName/Copyright/...)
     upx=False,
 )
 coll = COLLECT(

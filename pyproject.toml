@@ -1,3 +1,28 @@
+[project]
+name = "masking"
+version = "2026.10.1"
+description = "Локальный сервис маскирования персональных данных в Word и Excel с обратимым восстановлением."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Aleksey Blagonravov" },
+]
+keywords = ["masking", "pii", "docx", "xlsx", "russian", "privacy", "152-fz"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Office Suites",
+    "Topic :: Security",
+    "Natural Language :: Russian",
+]
+
+[project.urls]
+Homepage = "https://github.com/alexblag023/Masking"
+Issues = "https://github.com/alexblag023/Masking/issues"
+
 [tool.bandit]
 # tests/ целиком — там assert это стандарт pytest, не уязвимость.
 exclude_dirs = ["tests", ".build-venv", "build", "dist"]
