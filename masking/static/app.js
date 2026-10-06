@@ -149,15 +149,89 @@ async function viewProjects() {
   }
   const grid = h("div", { class: "grid cards" });
   for (const p of list) {
-    const card = h("a", { class: "card", href: `#/p/${p.id}`, style: "display:block;color:inherit;" },
-      h("h2", {}, p.name),
-      h("div", { class: "muted" },
-        `${p.entities} сущностей · ${p.documents} документов · изменён ${fmt.date(p.last_activity || p.created_at)}`
+    const title = h("h2", { style: "margin-right:auto" }, p.name);
+    const menu = projectActionsMenu(p);
+    const header = h("div", { class: "row", style: "align-items:flex-start;gap:.5rem" }, title, menu);
+    const card = h("div", { class: "card card-project" },
+      header,
+      h("a", { href: `#/p/${p.id}`, class: "card-link",
+               "aria-label": `Открыть проект ${p.name}`,
+               style: "color:inherit;text-decoration:none;display:block;margin-top:.5rem" },
+        h("div", { class: "muted" },
+          `${p.entities} сущностей · ${p.documents} документов · изменён ${fmt.date(p.last_activity || p.created_at)}`
+        ),
       ),
     );
     grid.append(card);
   }
   view.append(grid);
+}
+
+/** Меню действий над проектом (⋮): переименовать, удалить. */
+function projectActionsMenu(p) {
+  const btn = h("button", {
+    class: "btn ghost sm icon-btn", type: "button",
+    "aria-haspopup": "menu", "aria-expanded": "false",
+    title: "Действия с проектом",
+    "aria-label": `Действия: ${p.name}`,
+  }, "⋮");
+  const items = [
+    { label: "Переименовать", act: () => renameProjectDialog(p) },
+    { label: "Удалить проект…", danger: true, act: () => deleteProjectDialog(p) },
+  ];
+  const popup = h("div", { class: "popup", role: "menu" });
+  for (const it of items) {
+    const el = h("button", {
+      type: "button", role: "menuitem",
+      class: "popup-item" + (it.danger ? " danger" : ""),
+    }, it.label);
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      close();
+      it.act();
+    });
+    popup.append(el);
+  }
+  const wrap = h("div", { class: "popup-wrap" }, btn, popup);
+  function close() {
+    wrap.classList.remove("open");
+    btn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onDocClick, true);
+  }
+  function onDocClick(e) { if (!wrap.contains(e.target)) close(); }
+  btn.addEventListener("click", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const open = wrap.classList.toggle("open");
+    btn.setAttribute("aria-expanded", String(open));
+    if (open) setTimeout(() => document.addEventListener("click", onDocClick, true), 0);
+    else document.removeEventListener("click", onDocClick, true);
+  });
+  return wrap;
+}
+
+async function renameProjectDialog(p) {
+  const input = h("input", { type: "text", value: p.name, maxLength: 120 });
+  const body = h("div", {},
+    h("label", {},
+      h("div", { class: "muted" }, "Новое название"),
+      input,
+    ),
+  );
+  input.addEventListener("input",
+    () => $("#dialog-ok").disabled = !input.value.trim() || input.value.trim() === p.name);
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+  const r = await dialog({ title: "Переименовать проект", body, okLabel: "Сохранить", okDisabled: true });
+  if (r !== "ok") return;
+  try {
+    await api(`/projects/${p.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: input.value.trim() }),
+    });
+    toast("Проект переименован");
+    // Перерисовываем текущий экран.
+    route();
+    await renderNav(location.hash.match(/\/p\/(\d+)/)?.[1] ?? null);
+  } catch (e) { toast(e.message, "err"); }
 }
 
 async function createProjectDialog() {
@@ -190,7 +264,10 @@ async function viewProjectOverview([, pid]) {
   renderCrumbs([{ label: "Проекты", href: "#/" }, { label: p.name }]);
   const view = $("#view"); view.replaceChildren();
   view.append(
-    h("div", { class: "row between" }, h("h1", {}, p.name)),
+    h("div", { class: "row between" },
+      h("h1", { style: "margin:0" }, p.name),
+      projectActionsMenu(p),
+    ),
     h("div", { class: "summary" },
       tile(p.entities, "Сущностей"),
       tile(p.documents, "Документов"),
@@ -416,30 +493,22 @@ async function viewSettings([, pid]) {
   renderCrumbs([
     { label: "Проекты", href: "#/" }, { label: p.name, href: `#/p/${pid}` }, { label: "Настройки" },
   ]);
-  const nameInput = h("input", { type: "text", value: p.name, maxLength: 120 });
   const view = $("#view"); view.replaceChildren(
     h("div", { class: "card" },
-      h("h2", {}, "Общие"),
-      h("label", {}, h("div", { class: "muted" }, "Название"), nameInput),
+      h("h2", {}, "Название"),
+      h("p", { class: "muted" }, `Текущее название: «${p.name}».`),
       h("div", { class: "row", style: "margin-top:1rem" },
-        h("button", { class: "btn primary", onclick: renameProject }, "Сохранить")),
+        h("button", { class: "btn primary",
+                      onclick: () => renameProjectDialog(p) }, "Переименовать…")),
     ),
     h("div", { class: "card" },
       h("h2", {}, "Опасная зона"),
-      h("p", {}, "Удаление проекта убирает всю карту соответствий и загруженные файлы. Ранее замаскированные документы станет невозможно демаскировать."),
-      h("button", { class: "btn danger", onclick: () => deleteProjectDialog(p) }, "Удалить проект"),
+      h("p", {}, "Удаление проекта убирает всю карту соответствий и загруженные файлы. "
+                 + "Ранее замаскированные документы станет невозможно демаскировать."),
+      h("button", { class: "btn danger",
+                    onclick: () => deleteProjectDialog(p) }, "Удалить проект"),
     ),
   );
-  async function renameProject() {
-    try {
-      await api(`/projects/${pid}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: nameInput.value.trim() }),
-      });
-      toast("Сохранено");
-      await renderNav(pid);
-    } catch (e) { toast(e.message, "err"); }
-  }
 }
 
 async function deleteProjectDialog(p) {
