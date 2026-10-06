@@ -20,12 +20,19 @@ jobs:
       - name: Smoke test exe
         shell: pwsh
         run: |
-          $p = Start-Process dist\masking-service.exe -PassThru
-          Start-Sleep -Seconds 8
-          $r = Invoke-RestMethod http://127.0.0.1:8765/api/health
-          if ($r.status -ne "ok") { throw "health check failed" }
-          Stop-Process $p
+          $p = Start-Process dist\masking-service\masking-service.exe -PassThru
+          Start-Sleep -Seconds 15
+          try {
+            $r = Invoke-RestMethod http://127.0.0.1:8765/api/health
+            if ($r.status -ne "ok") { throw "health check failed: $($r | ConvertTo-Json)" }
+          } finally {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\masking-service\* -DestinationPath dist\masking-service-portable.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: masking-service-windows
-          path: dist/masking-service.exe
+          name: masking-service-portable-windows
+          path: dist/masking-service-portable.zip

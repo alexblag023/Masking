@@ -3,3 +3,10 @@ uvicorn>=0.29
 python-multipart>=0.0.9
 python-docx>=1.1
 openpyxl>=3.1
+slovnet>=0.6
+navec>=0.10
+razdel>=0.5
+pymorphy3>=2.0
+# Транзитивная зависимость pymorphy через setuptools: нужен pkg_resources,
+# который убран в setuptools 81+.
+setuptools<81

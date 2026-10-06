@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Маскирование документов</title>
+<link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🛡️</text></svg>">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<a href="#main" class="skip-link">К содержимому</a>
+<div class="app">
+  <aside class="sidebar" aria-label="Навигация по проекту">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">🛡</span>
+      <span>Маскирование</span>
+    </div>
+    <nav id="nav" aria-label="Разделы проекта"></nav>
+    <div class="side-footer">
+      <button id="theme-btn" class="btn ghost sm" type="button" aria-label="Сменить тему">Тема: авто</button>
+      <div class="version" id="version"></div>
+    </div>
+  </aside>
+
+  <main id="main" class="main" tabindex="-1">
+    <header class="topbar">
+      <nav id="crumbs" class="crumbs" aria-label="Хлебные крошки"></nav>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+    </header>
+    <section id="view" class="view"></section>
+  </main>
+</div>
+
+<div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<dialog id="dialog">
+  <form method="dialog" id="dialog-form">
+    <h2 id="dialog-title"></h2>
+    <div id="dialog-body"></div>
+    <div class="dialog-actions">
+      <button value="cancel" class="btn ghost" type="submit">Отмена</button>
+      <button value="ok" class="btn primary" type="submit" id="dialog-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/static/app.js" type="module"></script>
+</body>
+</html>
