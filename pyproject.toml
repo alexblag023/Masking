@@ -1,0 +1,6 @@
+[tool.bandit]
+# tests/ целиком — там assert это стандарт pytest, не уязвимость.
+exclude_dirs = ["tests", ".build-venv", "build", "dist"]
+# B404/B603/B607 — subprocess без shell=True со списком аргументов,
+# именно так и используется; принимаем осознанно.
+skips = ["B101", "B404", "B603", "B607"]

@@ -2,12 +2,13 @@
 import json
 import sqlite3
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import __version__, registry
 from .docx_proc import mask_docx, unmask_docx
@@ -23,7 +24,56 @@ MEDIA_TYPES = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 
+# Разрешённые хосты (анти-DNS-rebinding) и источники (анти-CSRF).
+# Сервис слушает только loopback, но без проверки Host внешний домен,
+# указавший на 127.0.0.1, мог бы отправлять запросы с чужой страницы.
+# `testserver` — хост TestClient Starlette, оставляем ради тестов.
+_ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Жёсткие проверки на изменяющих запросах + CSP/заголовки на ответах."""
+
+    async def dispatch(self, request: Request, call_next):
+        host = (request.headers.get("host") or "").split(":")[0]
+        if host and host not in _ALLOWED_HOSTS:
+            return Response("Host rejected", status_code=400)
+
+        if request.method not in _SAFE_METHODS:
+            # Приемлем запросы либо от нашей же страницы (same-origin), либо
+            # из тестового клиента (у TestClient Origin/Sec-Fetch-Site отсутствуют).
+            sfs = request.headers.get("sec-fetch-site")
+            origin = request.headers.get("origin") or request.headers.get("referer") or ""
+            same_origin = False
+            if origin:
+                try:
+                    o = urlparse(origin)
+                    same_origin = o.hostname in _ALLOWED_HOSTS
+                except Exception:
+                    same_origin = False
+            # Разрешаем, если:
+            #  — явно same-origin (sec-fetch-site), либо
+            #  — Origin/Referer с нашего же хоста, либо
+            #  — ни того, ни другого нет (не-браузерный клиент; CORS-браузер
+            #    всегда шлёт Origin на cross-origin запросах).
+            if not (sfs == "same-origin" or same_origin or (not sfs and not origin)):
+                return Response("CSRF check failed", status_code=403)
+
+        response = await call_next(request)
+        # Заголовки защиты ответов (CSP: только собственные ресурсы).
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+            "script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+        )
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
+
+
 app = FastAPI(title="Masking service", version=__version__, docs_url="/docs", redoc_url=None)
+app.add_middleware(SecurityHeadersMiddleware)
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 if _STATIC_DIR.exists():

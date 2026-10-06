@@ -173,12 +173,26 @@ def _copy_tree_overwrite(src: str, dest: str) -> None:
     shutil.copytree(src, dest, dirs_exist_ok=True)
 
 
+def _safe_extract(zf: zipfile.ZipFile, dest_root: str) -> None:
+    """Распаковка с проверкой zip slip: путь ни одного файла не должен
+    уйти за пределы dest_root (напр. через `..` или абсолютный путь).
+
+    Иначе вредоносный zip мог бы перезаписать файл где угодно на диске.
+    """
+    base = os.path.realpath(dest_root)
+    for info in zf.infolist():
+        target = os.path.realpath(os.path.join(dest_root, info.filename))
+        if not (target == base or target.startswith(base + os.sep)):
+            raise RuntimeError(f"zip slip: {info.filename!r} ведёт за пределы {base}")
+    zf.extractall(dest_root)
+
+
 def _extract(tmp: str):
     """Распаковывает вшитый пакет в tmp/ext, восстанавливает Unix-права (+x)
     на исполняемый файл (zip их теряет), возвращает (src_dir, new_compat)."""
     ext = os.path.join(tmp, "ext")
     with zipfile.ZipFile(_embedded_zip()) as z:
-        z.extractall(ext)
+        _safe_extract(z, ext)
         if os.name != "nt":
             # external_attr у zip-записи хранит Unix-mode в старших битах. Восстановим +x,
             # чтобы на macOS/Linux установленный masking-service запускался.
