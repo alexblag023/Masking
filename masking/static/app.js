@@ -568,7 +568,7 @@ api("/health").then(h => {
 route();
 
 // Heartbeat: пока вкладка открыта, пингуем сервис. Если пинг пропадёт на
-// ~30 секунд (вкладку закрыли или ПК ушёл в сон), процесс сервиса выйдет
+// ~15 секунд (вкладку закрыли или ПК ушёл в сон), процесс сервиса выйдет
 // сам (watchdog в main.py). Это и есть «закрыл окно → приложение закрылось».
 function beat() {
   // same-origin: заголовки Origin/Sec-Fetch-Site проверяет серверный middleware.
@@ -576,5 +576,14 @@ function beat() {
 }
 beat();
 setInterval(beat, 5000);
-// Приоритетно: при закрытии вкладки отправляем прощальный пинг с меткой — но
-// он нам не нужен для корректности, достаточно таймаута.
+
+// Явный сигнал о закрытии вкладки — чтобы не ждать watchdog-таймаут.
+// sendBeacon работает даже когда страница уже уходит и обычный fetch
+// браузер уже отменяет; эндпоинт /api/closed вынесен из-под CSRF-проверки.
+function sayGoodbye() {
+  try {
+    navigator.sendBeacon("/api/closed", new Blob([""], { type: "text/plain" }));
+  } catch {}
+}
+window.addEventListener("pagehide", sayGoodbye);
+window.addEventListener("beforeunload", sayGoodbye);
