@@ -14,12 +14,15 @@ import pathlib
 
 ROOT = SPECPATH
 # PyInstaller включает в exe по одному RT_ICON на каждый .ico в списке.
-# Multi-frame .ico он разбирает нестабильно (seek по кадрам в Pillow —
-# всегда возвращает основной), поэтому держим отдельный .ico для каждого
-# размера, и Windows Explorer сам выберет подходящий из RT_GROUP_ICON.
-_ICON_DIR = pathlib.Path(ROOT, "packaging", "icon")
-ICON = sorted(str(p) for p in _ICON_DIR.glob("masking-*.ico")) \
-       or [os.path.join(ROOT, "packaging", "masking.ico")]
+# Multi-frame .ico он не разворачивает: Pillow seek() по кадрам ICO всегда
+# возвращает только основной. Поэтому держим ОТДЕЛЬНЫЙ .ico на размер и
+# передаём PyInstaller явный список путей.
+_SIZES = (16, 24, 32, 48, 64, 128, 256)
+ICON = [os.path.join(ROOT, "packaging", "icon", f"masking-{s}.ico") for s in _SIZES]
+_missing = [p for p in ICON if not os.path.isfile(p)]
+if _missing:
+    raise SystemExit(f"spec: отсутствуют файлы иконок: {_missing}")
+print(f"[spec] ICON ({len(ICON)}): " + ", ".join(os.path.basename(p) for p in ICON))
 VERINFO = os.path.join(ROOT, "packaging", "version_info.txt")
 
 hidden = (
