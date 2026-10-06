@@ -1,0 +1,19 @@
+<!-- Логотип Masking: щит (фирменный синий) + три белые точки — скрытые данные. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="shield" x1="128" y1="20" x2="128" y2="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2E6FE6"/>
+      <stop offset="1" stop-color="#1A4FB3"/>
+    </linearGradient>
+  </defs>
+  <!-- Классический силуэт щита. -->
+  <path d="M128 20 L220 50 L220 128 C220 192 180 220 128 236 C76 220 36 192 36 128 L36 50 Z"
+        fill="url(#shield)"/>
+  <!-- Тонкая внутренняя рамка — глубина без лишних деталей. -->
+  <path d="M128 36 L206 62 L206 128 C206 184 173 208 128 220 C83 208 50 184 50 128 L50 62 Z"
+        fill="none" stroke="#ffffff" stroke-opacity=".18" stroke-width="2"/>
+  <!-- Три точки: универсальный знак «данные скрыты». -->
+  <circle cx="86"  cy="138" r="14" fill="#ffffff"/>
+  <circle cx="128" cy="138" r="14" fill="#ffffff"/>
+  <circle cx="170" cy="138" r="14" fill="#ffffff"/>
+</svg>

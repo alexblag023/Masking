@@ -93,7 +93,7 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: center; gap: var(--s-2);
   font-weight: 600; font-size: var(--fs-lg); margin-bottom: var(--s-5);
 }
-.brand-mark { font-size: 1.5rem; }
+.brand-mark { width: 28px; height: 28px; display: block; }
 #nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 #nav a {
   color: var(--text); padding: var(--s-2) var(--s-3); border-radius: var(--r-sm);

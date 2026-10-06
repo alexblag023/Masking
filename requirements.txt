@@ -7,6 +7,8 @@ slovnet>=0.6
 navec>=0.10
 razdel>=0.5
 pymorphy3>=2.0
+# Собственное окно приложения (используется WebView2 Runtime на Windows).
+pywebview>=5.0
 # Транзитивная зависимость pymorphy через setuptools: нужен pkg_resources,
 # который убран в setuptools 81+.
 setuptools<81
