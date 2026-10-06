@@ -105,25 +105,25 @@ jobs:
           Get-Item $zip | Select-Object Name, Length
 
       - name: Upload portable zip
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: masking-portable
           path: dist/Masking_*.zip
 
       - name: Upload installer exe
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: masking-installer
           path: dist/Установить_Masking.exe
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: masking-sbom
           path: dist/sbom.cdx.json
 
       - name: Upload source archive
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: masking-source
           path: dist/Masking_source_*.zip
