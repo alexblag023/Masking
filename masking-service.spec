@@ -13,16 +13,11 @@ from PyInstaller.utils.hooks import (
 import pathlib
 
 ROOT = SPECPATH
-# PyInstaller включает в exe по одному RT_ICON на каждый .ico в списке.
-# Multi-frame .ico он не разворачивает: Pillow seek() по кадрам ICO всегда
-# возвращает только основной. Поэтому держим ОТДЕЛЬНЫЙ .ico на размер и
-# передаём PyInstaller явный список путей.
-_SIZES = (16, 24, 32, 48, 64, 128, 256)
-ICON = [os.path.join(ROOT, "packaging", "icon", f"masking-{s}.ico") for s in _SIZES]
-_missing = [p for p in ICON if not os.path.isfile(p)]
-if _missing:
-    raise SystemExit(f"spec: отсутствуют файлы иконок: {_missing}")
-print(f"[spec] ICON ({len(ICON)}): " + ", ".join(os.path.basename(p) for p in ICON))
+# Один multi-frame .ico, передаётся строкой (не списком).
+# Проверено на образце gu-ext/orchestrator/packaging/gu_orchestrator.spec:
+# PyInstaller разбирает такой ICO как multi-frame; при передаче списком
+# почему-то кладёт в exe только один кадр.
+ICON = os.path.join(ROOT, "packaging", "masking.ico")
 VERINFO = os.path.join(ROOT, "packaging", "version_info.txt")
 
 hidden = (

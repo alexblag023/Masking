@@ -29,23 +29,6 @@ jobs:
       - name: Tests
         run: python -m pytest -q
 
-      - name: Diagnose icons as seen by PyInstaller
-        shell: pwsh
-        # Внутренний IconFile PyInstaller'а парсит .ico бинарно (не через
-        # Pillow.seek). Печатаем, сколько кадров он реально видит в каждом из
-        # наших файлов — если 1, значит ICO некорректный на уровне ICONDIR.
-        run: |
-          python -c @"
-          import glob
-          from PyInstaller.utils.win32.icon import IconFile
-          for f in sorted(glob.glob('packaging/icon/masking-*.ico')) + ['packaging/masking.ico']:
-              try:
-                  info = IconFile(f)
-                  print(f'{f}: images={len(info.images)}')
-              except Exception as e:
-                  print(f'{f}: ERROR {e!r}')
-          "@
-
       - name: Build installer package
         # --skip-tests: уже прогнали отдельным шагом; --allow-dirty: Actions clones без тегов,
         # лок-файла нет — build.py предупредит и соберёт из requirements.txt.

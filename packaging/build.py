@@ -133,44 +133,7 @@ def build_app(py: Path) -> Path:
     folder = DIST / "masking-service"
     if not folder.is_dir():
         raise RuntimeError(f"Ожидалась папка {folder}")
-    # Прописываем все иконки принудительно: через spec icon=[...] PyInstaller
-    # 6.22 на Windows по непонятным причинам сохраняет только один RT_ICON
-    # (проверено CI'ной проверкой). Повторный CopyIcons перезаписывает
-    # ресурсы exe всем нужным набором размеров (16..256), и Explorer
-    # перестаёт показывать «пустую» иконку в маленьких размерах.
-    if os.name == "nt":
-        _force_icons(py, folder / "masking-service.exe")
     return folder
-
-
-def _force_icons(py: Path, exe: Path) -> None:
-    icon_dir = ROOT / "packaging" / "icon"
-    icons = sorted(str(p) for p in icon_dir.glob("masking-*.ico"))
-    if not icons or not exe.is_file():
-        return
-    # CopyIcons из PyInstaller.utils.win32.icon требует инициализированный
-    # PyInstaller.config.CONF["workpath"] для normalize_icon_type — вне
-    # PyInstaller-рантайма этого ключа нет, и прямой вызов падает KeyError.
-    # Явно пробрасываем workpath.
-    workpath = str(ROOT / "build")
-    code = (
-        "import sys, os, traceback\n"
-        "try:\n"
-        "    import PyInstaller.config as _cfg\n"
-        "    _cfg.CONF['workpath'] = sys.argv[1]\n"
-        "    from PyInstaller.utils.win32.icon import CopyIcons\n"
-        "    CopyIcons(sys.argv[2], sys.argv[3:])\n"
-        "    print('CopyIcons OK, files:', len(sys.argv[3:]))\n"
-        "except Exception:\n"
-        "    traceback.print_exc()\n"
-        "    sys.exit(1)\n"
-    )
-    r = subprocess.run([py, "-c", code, workpath, str(exe), *icons],
-                       capture_output=True, text=True)
-    if r.stdout: print(r.stdout.rstrip())
-    if r.stderr: print(r.stderr.rstrip(), file=sys.stderr)
-    if r.returncode == 0:
-        print(f"Переписал иконки exe: {len(icons)} размеров")
 
 
 def generate_sbom(py: Path) -> Path | None:
@@ -247,11 +210,7 @@ def build_installer_exe(py: Path, zip_path: Path) -> Path:
     staged.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(zip_path, staged)
     sep = ";" if os.name == "nt" else ":"
-    icon_dir = PKG / "icon"
-    icons = sorted(icon_dir.glob("masking-*.ico")) if icon_dir.is_dir() else []
-    if not icons:
-        single = PKG / "masking.ico"
-        icons = [single] if single.is_file() else []
+    icon = PKG / "masking.ico"
     verinfo = PKG / "version_info.txt"
     logo = ROOT / "masking" / "static" / "logo-128.png"
     cmd = [py, "-m", "PyInstaller", "--clean", "--noconfirm", "--onefile", "--noconsole",
@@ -260,12 +219,8 @@ def build_installer_exe(py: Path, zip_path: Path) -> Path:
            "--distpath", str(DIST), "--workpath", str(ROOT / "build"),
            "--specpath", str(ROOT / "build"),
            str(PKG / "installer_app.py")]
-    for ico in icons:
-        cmd += ["--icon", str(ico)]
-    # Для окна pywebview (если установщик когда-нибудь переключится на него)
-    # и чтобы Explorer видел ico рядом с exe на распаковке.
-    if icons:
-        cmd += ["--add-data", f"{icons[-1]}{sep}."]
+    if icon.is_file():
+        cmd += ["--icon", str(icon), "--add-data", f"{icon}{sep}."]
     if verinfo.is_file():
         cmd += ["--version-file", str(verinfo)]
     if logo.is_file():
