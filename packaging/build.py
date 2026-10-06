@@ -148,19 +148,25 @@ def _force_icons(py: Path, exe: Path) -> None:
     icons = sorted(str(p) for p in icon_dir.glob("masking-*.ico"))
     if not icons or not exe.is_file():
         return
+    # CopyIcons из PyInstaller.utils.win32.icon требует инициализированный
+    # PyInstaller.config.CONF["workpath"] для normalize_icon_type — вне
+    # PyInstaller-рантайма этого ключа нет, и прямой вызов падает KeyError.
+    # Явно пробрасываем workpath.
+    workpath = str(ROOT / "build")
     code = (
-        "import sys, traceback\n"
+        "import sys, os, traceback\n"
         "try:\n"
+        "    import PyInstaller.config as _cfg\n"
+        "    _cfg.CONF['workpath'] = sys.argv[1]\n"
         "    from PyInstaller.utils.win32.icon import CopyIcons\n"
-        "    CopyIcons(sys.argv[1], sys.argv[2:])\n"
-        "    print('CopyIcons OK, files:', len(sys.argv[2:]))\n"
+        "    CopyIcons(sys.argv[2], sys.argv[3:])\n"
+        "    print('CopyIcons OK, files:', len(sys.argv[3:]))\n"
         "except Exception:\n"
         "    traceback.print_exc()\n"
         "    sys.exit(1)\n"
     )
-    # Не падаем в check=True — печатаем stdout/stderr и идём дальше, если
-    # CopyIcons упал. Один RT_ICON из spec лучше, чем сломанная сборка.
-    r = subprocess.run([py, "-c", code, str(exe), *icons], capture_output=True, text=True)
+    r = subprocess.run([py, "-c", code, workpath, str(exe), *icons],
+                       capture_output=True, text=True)
     if r.stdout: print(r.stdout.rstrip())
     if r.stderr: print(r.stderr.rstrip(), file=sys.stderr)
     if r.returncode == 0:
