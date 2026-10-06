@@ -210,7 +210,11 @@ def build_installer_exe(py: Path, zip_path: Path) -> Path:
     staged.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(zip_path, staged)
     sep = ";" if os.name == "nt" else ":"
-    icon = PKG / "masking.ico"
+    icon_dir = PKG / "icon"
+    icons = sorted(icon_dir.glob("masking-*.ico")) if icon_dir.is_dir() else []
+    if not icons:
+        single = PKG / "masking.ico"
+        icons = [single] if single.is_file() else []
     verinfo = PKG / "version_info.txt"
     logo = ROOT / "masking" / "static" / "logo-128.png"
     cmd = [py, "-m", "PyInstaller", "--clean", "--noconfirm", "--onefile", "--noconsole",
@@ -219,8 +223,12 @@ def build_installer_exe(py: Path, zip_path: Path) -> Path:
            "--distpath", str(DIST), "--workpath", str(ROOT / "build"),
            "--specpath", str(ROOT / "build"),
            str(PKG / "installer_app.py")]
-    if icon.is_file():
-        cmd += ["--icon", str(icon), "--add-data", f"{icon}{sep}."]
+    for ico in icons:
+        cmd += ["--icon", str(ico)]
+    # Для окна pywebview (если установщик когда-нибудь переключится на него)
+    # и чтобы Explorer видел ico рядом с exe на распаковке.
+    if icons:
+        cmd += ["--add-data", f"{icons[-1]}{sep}."]
     if verinfo.is_file():
         cmd += ["--version-file", str(verinfo)]
     if logo.is_file():
